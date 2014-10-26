@@ -1,0 +1,115 @@
+---
+title: "Practical Machine Learning Project"
+author: "Kyle Joecken"
+date: "10/23/2014"
+output: html_document
+---
+
+```{r, echo=FALSE, cache=TRUE}
+training <- read.csv("~/workspace/coursera_data_science/8_Practical_Machine_Learning/Project/pml-training.csv")
+testing <- read.csv("~/workspace/coursera_data_science/8_Practical_Machine_Learning/Project/pml-testing.csv")
+```
+
+## Introduction
+
+We would like to use machine learning algorithms to be able to determine whether
+or not an exercise has been executed properly.  In particular, we have several
+observations of Unilateral Dumbbell Biceps Curls, in which the participants have
+attached accelerometers, gyroscopes, and more.  We will attempt to cull the data
+down from 160 variables to a more useful set, then use random forests to build a
+predictive algorithm that can correctly predict a given test set of curl reps.
+
+## Data and Preprocessing
+
+The data can be found at the following [source](http://groupware.les.inf.puc-rio.br/static/WLE/WearableComputing_weight_lifting_exercises_biceps_curl_variations.csv); instead, we download and read preset 
+[testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) and
+[training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+sets provided by the instructors.  We have read the two data sets into data
+frames called `testing` and `training`, respectively.
+
+First, we note that there are several predictors that are messy and do not even
+exists in the testing set; let's reduce ourselves to only those variables that
+aren't `NA` in the testing set.  We also don't need the first 7 variables, so
+we'll ditch those as well.
+
+```{r, cache=TRUE}
+keep <- !is.na(testing[1, ])
+keep[1:7] <- FALSE
+training <- training[, keep]
+testing <- testing[, keep]
+```
+
+We'll also slice our training set further into a teaching set and a cross
+validation set.
+
+```{r, message=FALSE}
+library(caret)
+set.seed(314159)
+inTeach <- createDataPartition(y = training$classe, p = 0.6, list = FALSE)
+teaching <- training[inTeach, ]
+checking <- training[-inTeach, ]
+```
+
+## Algorithm
+
+Given [the description](http://groupware.les.inf.puc-rio.br/har) of the
+difference between a proper repetition of a Unilateral Dumbbell Biceps Curl
+(`classe == "A"`) and the various common mistakes in executing same
+(`classe != "A"`), it would seem that techniques that use cutoffs of various
+predictors as classifiers are likely to do fairly well at predicting which flavor
+of repetition the data are representing.  As such, random trees and boosting
+seem like decent candidates to use for a model.  As the [paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) by the group that created the data set indicates that they used
+random forests, we will do the same.
+
+First, let's try to select features by running a preliminary test on the
+teaching set and considering the `varImp()` output.
+
+```{r, cache=TRUE, message=FALSE}
+library(randomForest)
+fitTest <- randomForest(classe ~ ., data = teaching, p = 0.1, ntrees = 100)
+worth <- varImp(fitTest)
+keep2 <- worth$Overall > 200
+keep2[53] <- TRUE
+```
+
+This last line of code ensures that we keep the final, outcome column.  Let's
+now prune our data sets further and run `randomForest` on the default settings.
+
+```{r, cache=TRUE}
+rm(fitTest)
+teaching <- teaching[, keep2]
+fitMod <- randomForest(classe ~ ., data = teaching)
+print(fitMod)
+```
+
+The OOB (out-of-box) estimate of error rate is 1.71%; not terrible.  Let's cross
+validate on the `checking` set and see how accurate we are; hopefully we'll stay
+in that range a bit.
+
+```{r}
+checking <- checking[, keep2]
+library(randomForest)
+confusionMatrix(checking$classe, predict(fitMod, checking))
+```
+
+Looks like a 2% error rate.
+
+## Evaluation
+
+Feeling sufficiently confident to put our model to the test, we will use it to
+predict the `testing` set.  First, we pare down the columns as we did with the
+previous data.
+
+```{r}
+testing <- testing[, keep2]
+```
+
+Now we store our predictions in an `answers` vector.
+
+```{r}
+answers <- predict(fitMod, testing)
+```
+
+Without being given the answers, the only thing to do is submit the above by
+running the Course Project: Submission code and submitting the wee text files
+as instructed.  Fortunately for me, all 20 were correctly predicted.  Huzzah!
