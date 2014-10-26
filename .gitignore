@@ -1,2 +1,3 @@
 *.csv
 *.txt
+project_cache/
